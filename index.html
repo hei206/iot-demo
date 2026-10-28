@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>物联网传感器数据可视化</title>
+    <link rel="stylesheet" href="style.css" />
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <header>
+        <h1>🌡️ 物联网实时传感器数据监控</h1>
+        <p>温度 &amp; 湿度 · 实时刷新</p>
+    </header>
+
+    <main>
+        <!-- 数值概览卡片 -->
+        <section class="cards">
+            <div class="card temp-card">
+                <div class="card-label">当前温度</div>
+                <div class="card-value" id="tempValue">--</div>
+                <div class="card-unit">°C</div>
+                <div class="card-sub">
+                    最高 <span id="tempMax">--</span>°C ·
+                    最低 <span id="tempMin">--</span>°C
+                </div>
+            </div>
+
+            <div class="card humi-card">
+                <div class="card-label">当前湿度</div>
+                <div class="card-value" id="humiValue">--</div>
+                <div class="card-unit">%</div>
+                <div class="card-sub">
+                    最高 <span id="humiMax">--</span>% ·
+                    最低 <span id="humiMin">--</span>%
+                </div>
+            </div>
+        </section>
+
+        <!-- 实时折线图 -->
+        <section class="chart-section">
+            <h2>📈 实时趋势曲线</h2>
+            <div class="chart-container">
+                <canvas id="sensorChart"></canvas>
+            </div>
+            <div class="controls">
+                <button id="btnStart">▶ 开始采集</button>
+                <button id="btnStop">⏸ 暂停采集</button>
+                <button id="btnClear">🗑 清空数据</button>
+                <span class="status">
+                    状态：<span id="statusText">未开始</span> ·
+                    更新间隔：<select id="intervalSelect">
+                        <option value="1000">1 秒</option>
+                        <option value="2000" selected>2 秒</option>
+                        <option value="5000">5 秒</option>
+                    </select>
+                </span>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <small>物联网设计与创新课程项目 · 数据可视化 Demo</small>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+</html>
