@@ -1,0 +1,14 @@
+{
+  "name": "iot-demo",
+  "version": "1.0.0",
+  "description": "IoT MQTT温湿度发布 + Express可视化网页",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "mqtt": "^5.10.1",
+    "express": "^4.18.2"
+  }
+}

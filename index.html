@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>物联网传感器数据可视化</title>
     <link rel="stylesheet" href="style.css" />
-    <!-- Chart.js CDN -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <!-- Chart.js CDN（bootcdn 国内镜像） -->
+    <script src="https://cdn.bootcdn.net/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 </head>
 <body>
     <header>
@@ -45,16 +45,12 @@
                 <canvas id="sensorChart"></canvas>
             </div>
             <div class="controls">
-                <button id="btnStart">▶ 开始采集</button>
-                <button id="btnStop">⏸ 暂停采集</button>
-                <button id="btnClear">🗑 清空数据</button>
+                <button id="btnClear">🗑 清空历史</button>
                 <span class="status">
-                    状态：<span id="statusText">未开始</span> ·
-                    更新间隔：<select id="intervalSelect">
-                        <option value="1000">1 秒</option>
-                        <option value="2000" selected>2 秒</option>
-                        <option value="5000">5 秒</option>
-                    </select>
+                    连接状态：<span id="statusText">连接中...</span>
+                </span>
+                <span class="status" style="margin-left: auto">
+                    数据源：publisher.js · 每 1 秒一条 · MQTT /iot/sensor/temphumi
                 </span>
             </div>
         </section>

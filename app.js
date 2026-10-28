@@ -1,30 +1,22 @@
 /**
- * 物联网传感器数据可视化 —— 实时数据 + Chart.js
- * 数据来源：本地模拟（可替换为 MQTT / WebSocket / HTTP API）
+ * 物联网传感器数据可视化 —— Express REST 轮询
+ * 数据源：Express /api/current + /api/history（publisher.js 生成的数据）
  */
 
 (function () {
     'use strict';
 
-    // ======== 配置 ========
-    const MAX_POINTS = 30; // 图表保留的最大数据点
-    const DEFAULT_INTERVAL = 2000; // 默认刷新间隔（毫秒）
+    const MAX_POINTS = 60; // 图表最多保留 60 个点（和 publisher 缓冲区一致）
+    const POLL_INTERVAL = 1000; // 每秒轮询一次（publisher 也是 1 秒一跳）
 
-    // ======== 状态 ========
-    let timerId = null;
-    let running = false;
-    let intervalMs = DEFAULT_INTERVAL;
+    // 数据缓冲（前端自己维护用于图表渲染和极值计算）
+    const labels = [];       // 时间戳
+    const tempData = [];     // 温度
+    const humiData = [];     // 湿度
 
-    // 数据缓冲
-    const labels = []; // 时间戳
-    const tempData = [];
-    const humiData = [];
-
-    // 极值统计
-    let tempMax = -Infinity;
-    let tempMin = Infinity;
-    let humiMax = -Infinity;
-    let humiMin = Infinity;
+    let lastTime = null;     // 上次收到的 time 字段，用于去重
+    let pollingTimer = null;
+    let isConnected = false;
 
     // ======== 初始化 Chart ========
     const ctx = document.getElementById('sensorChart').getContext('2d');
@@ -111,57 +103,51 @@
                         color: '#4facfe',
                     },
                     ticks: { color: '#4facfe' },
-                    grid: { drawOnChartArea: false }, // 右侧轴不画网格
+                    grid: { drawOnChartArea: false },
                 },
             },
         },
     });
 
-    // ======== 模拟传感器数据 ========
-    // 基于"正弦基线 + 随机游走"，更贴近真实环境传感器的变化曲线
-    let tempBaseline = 24; // 温度基线
-    let humiBaseline = 55; // 湿度基线
-    let tickCount = 0;
+    // ======== DOM 更新 ========
 
-    function readSensor() {
-        tickCount++;
-        const noise = () => (Math.random() - 0.5) * 2; // -1 ~ 1
+    function updateCards(temp, humi) {
+        document.getElementById('tempValue').textContent = temp;
+        document.getElementById('humiValue').textContent = humi;
 
-        // 温度：基线 + 日内正弦趋势（周期 ~2 分钟，模拟演示用）+ 小噪声
-        tempBaseline += noise() * 0.15; // 慢慢漂移
-        tempBaseline = clamp(tempBaseline, 15, 35);
-        const temp = +(
-            tempBaseline +
-            Math.sin(tickCount * 0.15) * 2.5 +
-            noise() * 0.4
-        ).toFixed(1);
-
-        // 湿度：类似逻辑
-        humiBaseline += noise() * 0.3;
-        humiBaseline = clamp(humiBaseline, 30, 80);
-        const humi = +(
-            humiBaseline +
-            Math.cos(tickCount * 0.12) * 6 +
-            noise() * 0.8
-        ).toFixed(1);
-
-        return { temp, humi };
+        const tMax = Math.max(...tempData);
+        const tMin = Math.min(...tempData);
+        const hMax = Math.max(...humiData);
+        const hMin = Math.min(...humiData);
+        document.getElementById('tempMax').textContent =
+            isFinite(tMax) ? tMax.toFixed(1) : '--';
+        document.getElementById('tempMin').textContent =
+            isFinite(tMin) ? tMin.toFixed(1) : '--';
+        document.getElementById('humiMax').textContent =
+            isFinite(hMax) ? hMax.toFixed(1) : '--';
+        document.getElementById('humiMin').textContent =
+            isFinite(hMin) ? hMin.toFixed(1) : '--';
     }
 
-    function clamp(v, min, max) {
-        return Math.max(min, Math.min(max, v));
+    function setStatus(text) {
+        document.getElementById('statusText').textContent = text;
     }
 
-    // ======== 刷新一次 ========
-    function tick() {
-        const { temp, humi } = readSensor();
-        const now = new Date();
-        const timeStr = now.toLocaleTimeString('zh-CN', { hour12: false });
+    // ======== 数据入队 ========
 
-        // 维护滑动窗口
+    function pushPoint(data) {
+        // 用 publisher 的字段名：temperature / humidity / time
+        const t = data.temperature;
+        const h = data.humidity;
+        const timeStr = data.time;
+
+        // 去重（同一秒内可能重复拉到同一条）
+        if (lastTime === timeStr) return false;
+        lastTime = timeStr;
+
         labels.push(timeStr);
-        tempData.push(temp);
-        humiData.push(humi);
+        tempData.push(t);
+        humiData.push(h);
 
         if (labels.length > MAX_POINTS) {
             labels.shift();
@@ -169,83 +155,89 @@
             humiData.shift();
         }
 
-        // 更新极值（只在满窗口内统计最新值）
-        // 由于窗口滑动，极值重新计算更准确
-        tempMax = Math.max(...tempData);
-        tempMin = Math.min(...tempData);
-        humiMax = Math.max(...humiData);
-        humiMin = Math.min(...humiData);
-
-        // 更新数值卡片
-        document.getElementById('tempValue').textContent = temp;
-        document.getElementById('humiValue').textContent = humi;
-        document.getElementById('tempMax').textContent = tempMax.toFixed(1);
-        document.getElementById('tempMin').textContent = tempMin.toFixed(1);
-        document.getElementById('humiMax').textContent = humiMax.toFixed(1);
-        document.getElementById('humiMin').textContent = humiMin.toFixed(1);
-
-        // 更新图表（不传 duration 做平滑追加）
+        updateCards(t, h);
         chart.update('none');
+        return true;
     }
 
-    // ======== 启停控制 ========
-    function start() {
-        if (running) return;
-        running = true;
-        timerId = setInterval(tick, intervalMs);
-        document.getElementById('statusText').textContent = '采集中';
+    // ======== REST 轮询 ========
+
+    async function fetchJSON(url) {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
     }
 
-    function stop() {
-        if (!running) return;
-        running = false;
-        clearInterval(timerId);
-        timerId = null;
-        document.getElementById('statusText').textContent = '已暂停';
+    async function pollHistory() {
+        try {
+            const json = await fetchJSON('/api/history?n=60');
+            if (json.ok && json.data && json.data.length > 0) {
+                // 清空后批量灌入历史点
+                labels.length = 0;
+                tempData.length = 0;
+                humiData.length = 0;
+                lastTime = null;
+
+                json.data.forEach((item) => pushPoint(item));
+                chart.update();
+                isConnected = true;
+                setStatus('已连接');
+            } else {
+                setStatus('等待数据...');
+            }
+        } catch (err) {
+            console.warn('加载历史失败：', err.message);
+            setStatus('等待数据...（后端未启动？）');
+        }
     }
 
-    function clearAll() {
-        stop();
+    async function pollCurrent() {
+        try {
+            const json = await fetchJSON('/api/current');
+            if (json.ok && json.data) {
+                isConnected = true;
+                setStatus('已连接');
+                pushPoint(json.data);
+            } else if (!json.ok) {
+                setStatus('等待数据...');
+            }
+        } catch (err) {
+            if (isConnected) {
+                isConnected = false;
+                setStatus('连接断开，重试中...');
+            }
+        }
+    }
+
+    async function resetAll() {
+        try {
+            await fetchJSON('/api/control?action=reset');
+        } catch (_) { /* 忽略，本地也清 */ }
+
         labels.length = 0;
         tempData.length = 0;
         humiData.length = 0;
-        tempMax = -Infinity;
-        tempMin = Infinity;
-        humiMax = -Infinity;
-        humiMin = Infinity;
-        tickCount = 0;
+        lastTime = null;
 
-        // 重置卡片显示
-        ['tempValue', 'humiValue'].forEach((id) => {
-            document.getElementById(id).textContent = '--';
-        });
+        document.getElementById('tempValue').textContent = '--';
+        document.getElementById('humiValue').textContent = '--';
         ['tempMax', 'tempMin', 'humiMax', 'humiMin'].forEach((id) => {
             document.getElementById(id).textContent = '--';
         });
 
         chart.update();
-        document.getElementById('statusText').textContent = '未开始';
-    }
-
-    function applyInterval() {
-        const select = document.getElementById('intervalSelect');
-        intervalMs = parseInt(select.value, 10);
-        if (running) {
-            clearInterval(timerId);
-            timerId = setInterval(tick, intervalMs);
-        }
+        setStatus('已清空');
     }
 
     // ======== 绑定按钮 ========
-    document.getElementById('btnStart').addEventListener('click', start);
-    document.getElementById('btnStop').addEventListener('click', stop);
-    document.getElementById('btnClear').addEventListener('click', clearAll);
-    document.getElementById('intervalSelect').addEventListener('change', applyInterval);
+    document.getElementById('btnClear').addEventListener('click', resetAll);
 
-    // ======== 页面加载后自动采集 ========
-    window.addEventListener('load', () => {
-        // 先填入 3 个初始点，图表不至于空白
-        for (let i = 0; i < 3; i++) tick();
-        start();
+    // ======== 启动 ========
+    window.addEventListener('load', async () => {
+        setStatus('连接中...');
+        // 先拉一次历史，立即填充曲线
+        await pollHistory();
+        // 然后每秒轮询最新值
+        pollingTimer = setInterval(pollCurrent, POLL_INTERVAL);
     });
 })();
